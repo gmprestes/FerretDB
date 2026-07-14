@@ -23,7 +23,7 @@ const (
 	// v0.107.0-ferretdb-2.7.0 plus the Neon unlogged-build SMGR fix, without which
 	// the extended RUM index AM (and therefore indexed sort()) crashes the compute.
 	// The extension embeds its branch and SHA in this string, so it moves with the fork.
-	DocumentDB = "0.109.0 gitref: feron-0.109 sha:8621400e5e buildId:0"
+	DocumentDB = "0.109.0 gitref: feron-0.109 sha:cd3ece6794 buildId:0"
 
 	// DocumentDBURL points to the release page of the DocumentDB version above.
 	DocumentDBURL = "https://github.com/gmprestes/documentdb/tree/feron"
