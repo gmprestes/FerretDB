@@ -66,6 +66,7 @@ type Handler struct {
 	p        *documentdb.Pool
 	commands map[string]*command
 	s        *session.Registry
+	txns     *txnRegistry
 
 	runM   sync.Mutex
 	runCtx context.Context
@@ -106,6 +107,7 @@ func New(opts *NewOpts) (*Handler, error) {
 		NewOpts: opts,
 		p:       p,
 		s:       session.NewRegistry(sessionTimeout, opts.L),
+		txns:    newTxnRegistry(p, opts.L),
 	}
 
 	h.initCommands()
@@ -124,6 +126,10 @@ func (h *Handler) Run(ctx context.Context) {
 	defer func() {
 		h.runWG.Wait()
 
+		// Before the pool closes: an open transaction is holding one of its connections,
+		// and PostgreSQL would only notice when the connection dies.
+		h.txns.stop(ctx)
+
 		h.s.Stop()
 		h.p.Close()
 		h.L.InfoContext(ctx, "Stopped")
@@ -138,6 +144,13 @@ func (h *Handler) Run(ctx context.Context) {
 
 	defer ticker.Stop()
 
+	// Transactions are reaped on their own, and far more often than sessions: each one holds
+	// a connection and its locks, so an abandoned transaction blocks other writers until it
+	// is rolled back.
+	txnTicker := time.NewTicker(txnCleanupInterval)
+
+	defer txnTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -150,9 +163,17 @@ func (h *Handler) Run(ctx context.Context) {
 			for _, cursorID := range cursorIDs {
 				_ = h.p.KillCursor(ctx, cursorID)
 			}
+
+		case <-txnTicker.C:
+			if n := h.txns.deleteExpired(ctx); n > 0 {
+				h.L.WarnContext(ctx, "Rolled back expired transactions", slog.Int("count", n))
+			}
 		}
 	}
 }
+
+// txnCleanupInterval is how often abandoned transactions are looked for.
+const txnCleanupInterval = 5 * time.Second
 
 // Handle implements [middleware.Handler].
 func (h *Handler) Handle(ctx context.Context, req *middleware.Request) (*middleware.Response, error) {
@@ -218,6 +239,8 @@ func (h *Handler) Handle(ctx context.Context, req *middleware.Request) (*middlew
 			// TODO https://github.com/FerretDB/FerretDB/issues/4965
 			resp = middleware.ResponseErr(req, mongoerrors.Make(ctx, err, "", h.L))
 		}
+
+		resp = h.txnAfterCommand(ctx, req, resp)
 
 		return resp, nil
 

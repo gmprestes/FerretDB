@@ -36,15 +36,20 @@ type cursor struct {
 	token        *resource.Token
 	conn         *pgx.Conn // only if persisted/hijacked
 	continuation wirebson.RawDocument
+
+	// borrowed reports that conn belongs to something else -- a transaction --
+	// and outlives this cursor. Closing it here would kill that transaction.
+	borrowed bool
 }
 
 // newCursor creates a new cursor for the given continuation and connection (if any).
-func newCursor(continuation wirebson.RawDocument, conn *pgx.Conn) *cursor {
+func newCursor(continuation wirebson.RawDocument, conn *pgx.Conn, borrowed bool) *cursor {
 	must.BeTrue(len(continuation) > 0)
 
 	res := &cursor{
 		continuation: continuation,
 		conn:         conn,
+		borrowed:     borrowed,
 		token:        resource.NewToken(),
 		created:      time.Now(),
 	}
@@ -79,6 +84,11 @@ func (c *cursor) LogValue() slog.Value {
 //
 // It is safe to call this method multiple times, but not concurrently.
 func (c *cursor) close(ctx context.Context) {
+	if c.borrowed {
+		// The transaction that lent us this connection closes it, on COMMIT or ROLLBACK.
+		c.conn = nil
+	}
+
 	if c.conn != nil {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 3*time.Second)

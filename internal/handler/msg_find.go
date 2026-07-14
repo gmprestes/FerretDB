@@ -18,6 +18,7 @@ import (
 	"context"
 
 	"github.com/AlekSi/lazyerrors"
+	"github.com/FerretDB/wire/wirebson"
 
 	"github.com/FerretDB/FerretDB/v2/internal/handler/middleware"
 )
@@ -38,7 +39,41 @@ func (h *Handler) msgFind(connCtx context.Context, req *middleware.Request) (*mi
 		return nil, err
 	}
 
-	page, cursorID, err := h.p.Find(connCtx, dbName, req.DocumentRaw())
+	// A read inside a transaction has to run on the transaction's connection: that is
+	// where its snapshot and its own uncommitted writes are. Any cursor it opens lives
+	// there too, so getMore has to come back to the same connection.
+	t, key, err := h.txnFor(connCtx, doc)
+	if err != nil {
+		return nil, err
+	}
+
+	var page wirebson.RawDocument
+
+	var cursorID int64
+
+	if t != nil {
+		t.busy.Lock()
+
+		if t.conn == nil {
+			t.busy.Unlock()
+
+			return nil, errNoSuchTransaction()
+		}
+
+		page, cursorID, err = h.p.FindOnConn(connCtx, t.conn.Conn(), dbName, req.DocumentRaw())
+
+		t.busy.Unlock()
+
+		if err != nil {
+			err = txnError(err)
+
+			h.txns.discard(connCtx, key)
+
+			return nil, err
+		}
+	} else {
+		page, cursorID, err = h.p.Find(connCtx, dbName, req.DocumentRaw())
+	}
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

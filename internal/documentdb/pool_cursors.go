@@ -21,6 +21,7 @@ import (
 
 	"github.com/AlekSi/lazyerrors"
 	"github.com/FerretDB/wire/wirebson"
+	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 
 	"github.com/FerretDB/FerretDB/v2/internal/documentdb/documentdb_api"
@@ -78,6 +79,44 @@ func (p *Pool) GetMore(ctx context.Context, db string, spec wirebson.RawDocument
 // It attempts a clean close by sending the exit message to PostgreSQL.
 // However, this could block so ctx is available to limit the time to wait (up to 3 seconds).
 // The underlying connection will always be called regardless of any other errors.
+// FindOnConn runs find on a transaction's pinned connection.
+//
+// A cursor created here reads from that connection's snapshot, so it is registered as
+// borrowed: getMore lands on the same connection, and closing the cursor does not close
+// it -- the transaction does, when it commits or rolls back.
+func (p *Pool) FindOnConn(ctx context.Context, conn *pgx.Conn, db string, spec wirebson.RawDocument) (wirebson.RawDocument, int64, error) {
+	ctx, span := otel.Tracer("").Start(ctx, "documentdb.Pool.FindOnConn")
+	defer span.End()
+
+	page, continuation, _, cursorID, err := documentdb_api.FindCursorFirstPage(ctx, conn, p.l, db, spec, 0)
+	if err != nil {
+		return nil, 0, lazyerrors.Error(err)
+	}
+
+	if p.shouldStore(ctx, page, continuation, cursorID) {
+		p.r.NewBorrowedCursor(ctx, cursorID, continuation, conn)
+	}
+
+	return page, cursorID, nil
+}
+
+// AggregateOnConn runs aggregate on a transaction's pinned connection. See [Pool.FindOnConn].
+func (p *Pool) AggregateOnConn(ctx context.Context, conn *pgx.Conn, db string, spec wirebson.RawDocument) (wirebson.RawDocument, int64, error) {
+	ctx, span := otel.Tracer("").Start(ctx, "documentdb.Pool.AggregateOnConn")
+	defer span.End()
+
+	page, continuation, _, cursorID, err := documentdb_api.AggregateCursorFirstPage(ctx, conn, p.l, db, spec, 0)
+	if err != nil {
+		return nil, 0, lazyerrors.Error(err)
+	}
+
+	if p.shouldStore(ctx, page, continuation, cursorID) {
+		p.r.NewBorrowedCursor(ctx, cursorID, continuation, conn)
+	}
+
+	return page, cursorID, nil
+}
+
 func (p *Pool) KillCursor(ctx context.Context, id int64) bool {
 	ctx, span := otel.Tracer("").Start(ctx, "documentdb.Pool.KillCursor")
 	defer span.End()

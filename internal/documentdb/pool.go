@@ -15,6 +15,7 @@
 package documentdb
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/AlekSi/lazyerrors"
@@ -95,6 +96,63 @@ func (p *Pool) Acquire() (*Conn, error) {
 
 // WithConn acquires a connection from the pool and calls the provided function with it.
 // The connection is automatically released after the function returns.
+// Begin takes a connection out of the pool and opens a transaction on it.
+//
+// The connection is pinned for the whole life of the transaction: every command of the
+// transaction has to run on it, because that is where the transaction's snapshot, its
+// locks and its uncommitted rows live. Release it with [Pool.Commit] or [Pool.Rollback].
+func (p *Pool) Begin(ctx context.Context) (*Conn, error) {
+	conn, err := p.Acquire()
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if _, err = conn.Conn().Exec(ctx, "BEGIN"); err != nil {
+		conn.Release()
+		return nil, lazyerrors.Error(err)
+	}
+
+	// MongoDB does not queue behind a lock held by another transaction: it gives up almost
+	// at once (maxTransactionLockRequestTimeoutMillis, 5ms by default) and reports a write
+	// conflict, which the driver retries. PostgreSQL would instead block until the other
+	// transaction ends -- correct, but not what a MongoDB client is built to wait through.
+	if _, err = conn.Conn().Exec(ctx, "SET LOCAL lock_timeout = "+lockTimeout); err != nil {
+		conn.Release()
+		return nil, lazyerrors.Error(err)
+	}
+
+	return conn, nil
+}
+
+// lockTimeout is how long a statement inside a transaction waits for a row lock before it
+// gives up, mirroring MongoDB's maxTransactionLockRequestTimeoutMillis.
+const lockTimeout = "'5ms'"
+
+// Commit commits the transaction and gives the connection back to the pool.
+//
+// The connection is released even when the commit fails: a connection left inside a
+// failed transaction is unusable for anyone else, and pgx resets it on release.
+func (p *Pool) Commit(ctx context.Context, conn *Conn) error {
+	defer conn.Release()
+
+	if _, err := conn.Conn().Exec(ctx, "COMMIT"); err != nil {
+		return lazyerrors.Error(err)
+	}
+
+	return nil
+}
+
+// Rollback rolls the transaction back and gives the connection back to the pool.
+func (p *Pool) Rollback(ctx context.Context, conn *Conn) error {
+	defer conn.Release()
+
+	if _, err := conn.Conn().Exec(ctx, "ROLLBACK"); err != nil {
+		return lazyerrors.Error(err)
+	}
+
+	return nil
+}
+
 func (p *Pool) WithConn(f func(*pgx.Conn) error) error {
 	conn, err := p.Acquire()
 	if err != nil {

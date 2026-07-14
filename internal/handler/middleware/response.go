@@ -154,6 +154,18 @@ func ResponseErr(req *Request, err *mongoerrors.Error) *Response {
 		"codeName", err.Name,
 	)
 
+	// A driver retries a failed transaction only when the server labels the error as
+	// transient. Without the label, a write conflict -- which is routine under concurrency
+	// and is meant to be retried -- surfaces to the application as a hard failure.
+	if len(err.Labels) > 0 {
+		labels := wirebson.MakeArray(len(err.Labels))
+		for _, l := range err.Labels {
+			must.NoError(labels.Add(l))
+		}
+
+		must.NoError(doc.Add("errorLabels", labels))
+	}
+
 	resp := must.NotFail(ResponseDoc(req, doc))
 	resp.mongoError = err
 

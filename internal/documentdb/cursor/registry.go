@@ -118,12 +118,23 @@ func (r *Registry) Close(ctx context.Context) {
 // Passed context is used for logging/tracing, and for closing existing cursor, if any.
 // See [Registry.CloseCursor].
 func (r *Registry) NewCursor(ctx context.Context, id int64, continuation wirebson.RawDocument, conn *pgx.Conn) {
+	r.newCursor(ctx, id, continuation, conn, false)
+}
+
+// NewBorrowedCursor stores a cursor that reads from a connection owned by a transaction.
+// Closing the cursor must not close that connection: the transaction still needs it, and
+// the cursor's own state lives inside it anyway, so a getMore has to land on the same one.
+func (r *Registry) NewBorrowedCursor(ctx context.Context, id int64, continuation wirebson.RawDocument, conn *pgx.Conn) {
+	r.newCursor(ctx, id, continuation, conn, true)
+}
+
+func (r *Registry) newCursor(ctx context.Context, id int64, continuation wirebson.RawDocument, conn *pgx.Conn, borrowed bool) {
 	must.NotBeZero(id)
 	must.BeTrue(len(continuation) > 0)
 
 	r.rw.Lock()
 
-	c := newCursor(continuation, conn)
+	c := newCursor(continuation, conn, borrowed)
 
 	existing := r.cursors[id]
 	if existing != nil {

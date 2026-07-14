@@ -94,6 +94,14 @@ func (h *Handler) initCommands() {
 			Help: "Returns information about the current connection, " +
 				"specifically the state of authenticated users and their available permissions.",
 		},
+		"abortTransaction": {
+			handler: h.msgAbortTransaction,
+			Help:    "Aborts a multi-document transaction.",
+		},
+		"commitTransaction": {
+			handler: h.msgCommitTransaction,
+			Help:    "Commits a multi-document transaction.",
+		},
 		"count": {
 			handler: h.msgCount,
 			Help:    "Returns the count of documents that's matched by the query.",

@@ -62,6 +62,8 @@ const (
 	ErrMaxSubPipelineDepthExceeded                 = Code(232)     // MaxSubPipelineDepthExceeded
 	ErrNotImplemented                              = Code(238)     // NotImplemented
 	ErrConversionFailure                           = Code(241)     // ConversionFailure
+	ErrWriteConflict                              = Code(112)     // WriteConflict
+	ErrNoSuchTransaction                          = Code(251)     // NoSuchTransaction
 	ErrOperationNotSupportedInTransaction          = Code(263)     // OperationNotSupportedInTransaction
 	ErrIndexBuildAborted                           = Code(276)     // IndexBuildAborted
 	ErrUnableToFindIndex                           = Code(291)     // UnableToFindIndex
