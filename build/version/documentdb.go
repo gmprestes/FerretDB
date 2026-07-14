@@ -18,10 +18,15 @@ import "runtime"
 
 const (
 	// DocumentDB is a version of DocumentDB this version of FerretDB is compatible with.
-	DocumentDB = "0.107.0 gitref: ferretdb sha:e63835403d buildId:0"
+	//
+	// FeronDB builds DocumentDB from gmprestes/documentdb branch "feron": that is
+	// v0.107.0-ferretdb-2.7.0 plus the Neon unlogged-build SMGR fix, without which
+	// the extended RUM index AM (and therefore indexed sort()) crashes the compute.
+	// The extension embeds its branch and SHA in this string, so it moves with the fork.
+	DocumentDB = "0.107.0 gitref: feron sha:b283679569 buildId:0"
 
 	// DocumentDBURL points to the release page of the DocumentDB version above.
-	DocumentDBURL = "https://github.com/FerretDB/documentdb/releases/tag/v0.108.0-ferretdb-2.8.0"
+	DocumentDBURL = "https://github.com/gmprestes/documentdb/tree/feron"
 )
 
 // DocumentDBSafeToUpdate represents versions of DocumentDB that FerretDB can update.
@@ -32,7 +37,8 @@ var DocumentDBSafeToUpdate = []string{
 	"0.105.0 gitref: HEAD sha:8453d93b buildId:0",   // v2.4.0
 	"0.106.0 gitref: HEAD sha:beb9d25d98 buildId:0", // v2.5.0
 	// FerretDB v2.6.0 wasn't released
-	"0.107.0 gitref: HEAD sha:e63835403d buildId:0", // v2.7.0
+	"0.107.0 gitref: HEAD sha:e63835403d buildId:0",     // v2.7.0
+	"0.107.0 gitref: ferretdb sha:e63835403d buildId:0", // v2.7.0 built from the upstream branch
 }
 
 // PostgreSQLTest is a version of PostgreSQL used by tests.
