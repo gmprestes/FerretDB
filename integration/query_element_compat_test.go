@@ -124,14 +124,12 @@ func TestQueryElementCompatElementType(t *testing.T) {
 			resultType: EmptyResult,
 		},
 		"TypeArrayBadValuePlusInf": {
-			filter:           bson.D{{"v", bson.D{{"$type", []any{"binData", math.Inf(+1)}}}}},
-			resultType:       EmptyResult,
-			failsForFerretDB: "https://github.com/FerretDB/FerretDB-DocumentDB/issues/245",
+			filter:     bson.D{{"v", bson.D{{"$type", []any{"binData", math.Inf(+1)}}}}},
+			resultType: EmptyResult,
 		},
 		"TypeArrayBadValueMinusInf": {
-			filter:           bson.D{{"v", bson.D{{"$type", []any{"binData", math.Inf(-1)}}}}},
-			resultType:       EmptyResult,
-			failsForFerretDB: "https://github.com/FerretDB/FerretDB-DocumentDB/issues/245",
+			filter:     bson.D{{"v", bson.D{{"$type", []any{"binData", math.Inf(-1)}}}}},
+			resultType: EmptyResult,
 		},
 		"TypeArrayBadValueNegativeFloat": {
 			filter:     bson.D{{"v", bson.D{{"$type", []any{"binData", -1.123}}}}},

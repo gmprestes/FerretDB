@@ -36,9 +36,8 @@ func TestQueryArrayCompatSize(t *testing.T) {
 			filter: bson.D{{"v", bson.D{{"$size", int64(2)}}}},
 		},
 		"Infinity": {
-			filter:           bson.D{{"v", bson.D{{"$size", math.Inf(+1)}}}},
-			resultType:       EmptyResult,
-			failsForFerretDB: "https://github.com/FerretDB/FerretDB-DocumentDB/issues/245",
+			filter:     bson.D{{"v", bson.D{{"$size", math.Inf(+1)}}}},
+			resultType: EmptyResult,
 		},
 		"InvalidUse": {
 			filter:     bson.D{{"$size", 2}},
