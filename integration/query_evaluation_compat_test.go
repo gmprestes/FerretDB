@@ -178,9 +178,7 @@ func TestQueryEvaluationCompatMod(t *testing.T) {
 			resultType: EmptyResult,
 		},
 		"MinInt64_Divisor": {
-			filter:           bson.D{{"v", bson.D{{"$mod", bson.A{math.MinInt64, 0}}}}},
-			failsForFerretDB: "https://github.com/FerretDB/FerretDB-DocumentDB/issues/331",
-			failsProviders:   []shareddata.Provider{shareddata.Doubles, shareddata.Scalars},
+			filter: bson.D{{"v", bson.D{{"$mod", bson.A{math.MinInt64, 0}}}}},
 		},
 		"MinInt64_Remainder": {
 			filter:     bson.D{{"v", bson.D{{"$mod", bson.A{1, math.MinInt64}}}}},
@@ -200,9 +198,7 @@ func TestQueryEvaluationCompatMod(t *testing.T) {
 			failsForFerretDB: "https://github.com/FerretDB/FerretDB-DocumentDB/issues/330",
 		},
 		"MinInt64_1": {
-			filter:           bson.D{{"v", bson.D{{"$mod", bson.A{-922337203685477580, -8}}}}},
-			failsForFerretDB: "https://github.com/FerretDB/FerretDB-DocumentDB/issues/331",
-			failsProviders:   []shareddata.Provider{shareddata.Doubles, shareddata.Scalars},
+			filter: bson.D{{"v", bson.D{{"$mod", bson.A{-922337203685477580, -8}}}}},
 		},
 		"MinInt64_2": {
 			filter:     bson.D{{"v", bson.D{{"$mod", bson.A{-9.223372036854775808e+17, -8}}}}},
