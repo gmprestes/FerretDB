@@ -17,17 +17,23 @@ package handler
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/AlekSi/lazyerrors"
 	"github.com/FerretDB/wire/wirebson"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/FerretDB/FerretDB/v2/internal/documentdb/documentdb_api"
 	"github.com/FerretDB/FerretDB/v2/internal/documentdb/documentdb_api_internal"
 	"github.com/FerretDB/FerretDB/v2/internal/handler/middleware"
 	"github.com/FerretDB/FerretDB/v2/internal/mongoerrors"
 	"github.com/FerretDB/FerretDB/v2/internal/util/logging"
 	"github.com/FerretDB/FerretDB/v2/internal/util/must"
 )
+
+// indexBuildPollInterval is how often the queued index build is checked for
+// completion while the createIndexes command waits for it.
+const indexBuildPollInterval = 500 * time.Millisecond
 
 // msgCreateIndexes implements `createIndexes` command.
 //
@@ -66,16 +72,89 @@ func (h *Handler) msgCreateIndexes(connCtx context.Context, req *middleware.Requ
 	return middleware.ResponseDoc(req, res)
 }
 
-// createIndexes calls DocumentDB API to create indexes, decodes and maps embedded error to command error if any.
-// It returns a document for createIndexes response.
+// createIndexes creates indexes via DocumentDB's background build queue and
+// waits for the build to complete, so the command keeps MongoDB semantics
+// (returns when indexes are ready) without holding a server-side transaction
+// for the whole build. The build itself survives a client disconnect: it is
+// queued in a durable catalog table and executed by the extension's background
+// worker (documentdb.indexBuildsScheduledOnBgWorker must be on).
+//
+// This replaces the blocking create_indexes_non_concurrently path, which held
+// the client connection silent for the entire build — long builds (large
+// collections during restores) were killed by connection timeouts and left
+// collections without their indexes.
 func (h *Handler) createIndexes(connCtx context.Context, conn *pgx.Conn, command, dbName string, spec wirebson.RawDocument) (wirebson.AnyDocument, error) { //nolint:lll // for readability
-	// TODO https://github.com/documentdb/documentdb/issues/25
-	// resRaw, _, _, err := documentdb_api.CreateIndexesBackground(connCtx, conn.Conn(), h.L, dbName, spec)
-	resRaw, err := documentdb_api_internal.CreateIndexesNonConcurrently(connCtx, conn, h.L, dbName, spec, true)
+	resRaw, ok, requests, err := documentdb_api.CreateIndexesBackground(connCtx, conn, h.L, dbName, spec)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
+	if ok {
+		if failRaw, err := h.waitForIndexBuild(connCtx, conn, command, requests); err != nil {
+			return nil, lazyerrors.Error(err)
+		} else if failRaw != nil {
+			resRaw = failRaw
+		}
+	}
+
+	return h.decodeCreateIndexesResponse(connCtx, command, resRaw)
+}
+
+// waitForIndexBuild polls check_build_index_status until the queued build
+// completes. It returns a non-nil raw response when the build failed (to be
+// decoded and mapped like any createIndexes response), following the polling
+// protocol of DocumentDB's own create_indexes_background test helper.
+func (h *Handler) waitForIndexBuild(connCtx context.Context, conn *pgx.Conn, command string, requests wirebson.RawDocument) (wirebson.RawDocument, error) { //nolint:lll // for readability
+	reqDoc, err := requests.Decode()
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	// No queued request: the indexes already existed, nothing to wait for.
+	if reqDoc.Get("indexRequest") == nil && reqDoc.Get("indexRequests") == nil {
+		return nil, nil
+	}
+
+	start := time.Now()
+	logEvery := time.NewTicker(30 * time.Second)
+	defer logEvery.Stop()
+
+	for {
+		statusRaw, ok, complete, err := documentdb_api_internal.CheckBuildIndexStatus(connCtx, conn, h.L, requests)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
+		if !ok {
+			h.L.WarnContext(connCtx, "CreateIndexes background build failed",
+				slog.String("command", command), slog.Duration("elapsed", time.Since(start)))
+			return statusRaw, nil
+		}
+
+		if complete {
+			h.L.InfoContext(connCtx, "CreateIndexes background build complete",
+				slog.String("command", command), slog.Duration("elapsed", time.Since(start)))
+			return nil, nil
+		}
+
+		select {
+		case <-connCtx.Done():
+			// The client went away; the queued build keeps running server-side
+			// and the index appears when it finishes.
+			h.L.InfoContext(connCtx, "CreateIndexes client disconnected, background build continues",
+				slog.String("command", command), slog.Duration("elapsed", time.Since(start)))
+			return nil, connCtx.Err()
+		case <-logEvery.C:
+			h.L.InfoContext(connCtx, "CreateIndexes background build in progress",
+				slog.String("command", command), slog.Duration("elapsed", time.Since(start)))
+		case <-time.After(indexBuildPollInterval):
+		}
+	}
+}
+
+// decodeCreateIndexesResponse decodes a DocumentDB createIndexes response and
+// maps an embedded error to a command error if any.
+func (h *Handler) decodeCreateIndexesResponse(connCtx context.Context, command string, resRaw wirebson.RawDocument) (wirebson.AnyDocument, error) { //nolint:lll // for readability
 	// TODO https://github.com/FerretDB/FerretDB-DocumentDB/issues/292
 
 	res, err := resRaw.DecodeDeep()
