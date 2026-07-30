@@ -19,11 +19,12 @@ import "runtime"
 const (
 	// DocumentDB is a version of DocumentDB this version of FerretDB is compatible with.
 	//
-	// FeronDB builds DocumentDB from gmprestes/documentdb branch "feron": that is
-	// v0.107.0-ferretdb-2.7.0 plus the Neon unlogged-build SMGR fix, without which
-	// the extended RUM index AM (and therefore indexed sort()) crashes the compute.
-	// The extension embeds its branch and SHA in this string, so it moves with the fork.
-	DocumentDB = "0.109.0 gitref: feron-0.109 sha:a8548c1c9e buildId:0"
+	// FeronDB builds DocumentDB from gmprestes/documentdb branch "feron-0.109":
+	// upstream v0.109-0 plus our patches (Neon unlogged-build SMGR fix, parallel
+	// single-batch aggregation, textIndexVersion 3, lookup index pushdown).
+	// The extension embeds its branch and SHA in this string, so it must move
+	// together with ARG DOCUMENTDB_COMMIT in compute/Dockerfile (see docs/FORKS.md).
+	DocumentDB = "0.109.0 gitref: feron-0.109 sha:791915d19a buildId:0"
 
 	// DocumentDBURL points to the release page of the DocumentDB version above.
 	DocumentDBURL = "https://github.com/gmprestes/documentdb/tree/feron"
