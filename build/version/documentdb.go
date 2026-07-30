@@ -24,7 +24,7 @@ const (
 	// single-batch aggregation, textIndexVersion 3, lookup index pushdown).
 	// The extension embeds its branch and SHA in this string, so it must move
 	// together with ARG DOCUMENTDB_COMMIT in compute/Dockerfile (see docs/FORKS.md).
-	DocumentDB = "0.109.0 gitref: feron-0.109 sha:791915d19a buildId:0"
+	DocumentDB = "0.109.0 gitref: feron-0.109 sha:be0eabb8c5 buildId:0"
 
 	// DocumentDBURL points to the release page of the DocumentDB version above.
 	DocumentDBURL = "https://github.com/gmprestes/documentdb/tree/feron"
